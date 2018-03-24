@@ -51,6 +51,49 @@ def animate(i):
     ax1.canvas.draw()
 '''
 
+def computeLoudness():
+    snd = parselmouth.Sound(buffer_data)
+    intensity = snd.to_intensity(time_step=0.01)
+    len_intensity = len(intensity)
+    len_buffer = len(buffer_data)
+    coeff = len_buffer/ len_intensity
+    #print(len(intensity.values[0]))
+    intensity_average_filtered = averageFilter(intensity.values[0],5)
+    x = np.arange(len(intensity_average_filtered))
+    for a in range(len(x)):
+        x[a] = x[a] * coeff
+    min_threshold = np.poly1d([0,0,55]) #66
+    len_min_threshold = np.arange(len_buffer)
+    min_thresholdZ = min_threshold(len_min_threshold)
+    optimal_voice_level = 70
+    avg_threshold = np.poly1d([0,0,optimal_voice_level]) # optimal voice loudness
+    len_avg_threshold = np.arange(len_buffer)
+    avg_thresholdZ = avg_threshold(len_avg_threshold)
+    gauss_filtered = gaussian_filter(intensity_average_filtered, sigma=2)
+    optimal_voice_count = 0
+    for j in range(len(gauss_filtered)):
+        if gauss_filtered[j] > optimal_voice_level:
+            optimal_voice_count = optimal_voice_count + 1
+    loudness_factor = 100 * (optimal_voice_count/ len_intensity)
+    loudness_factor_fct = np.poly1d([0,0,loudness_factor])
+    loudnessX = np.arange(len_buffer)
+    loudnessY = loudness_factor_fct(loudnessX)
+    loudness_threshold = 20
+    if loudness_factor > loudness_threshold:
+        plt.plot(loudnessX,loudnessY, 'g')
+    else:
+        plt.plot(loudnessX,loudnessY, 'r')
+    plt.plot(len_min_threshold,min_thresholdZ)
+    plt.plot(len_avg_threshold,avg_thresholdZ)
+    plt.plot(x, intensity_average_filtered)
+    plt.plot(x, gauss_filtered)
+    plt.plot(np.arange(len(buffer_data)),buffer_data)
+    plt.pause(0.01)
+    plt.cla()
+
+def computeMonotony():
+    return
+
 def averageFilter(data,widthSegments):
     length = len(data)
     pitchAverageFilter = []
@@ -75,44 +118,7 @@ def main():
 
     try:
         while True:
-            snd = parselmouth.Sound(buffer_data)
-            intensity = snd.to_intensity(time_step=0.01)
-            len_intensity = len(intensity)
-            len_buffer = len(buffer_data)
-            coeff = len_buffer/ len_intensity
-            #print(len(intensity.values[0]))
-            intensity_average_filtered = averageFilter(intensity.values[0],5)
-            x = np.arange(len(intensity_average_filtered))
-            for a in range(len(x)):
-                x[a] = x[a] * coeff
-            min_threshold = np.poly1d([0,0,55]) #66
-            len_min_threshold = np.arange(len_buffer)
-            min_thresholdZ = min_threshold(len_min_threshold)
-            optimal_voice_level = 70
-            avg_threshold = np.poly1d([0,0,optimal_voice_level]) # optimal voice loudness
-            len_avg_threshold = np.arange(len_buffer)
-            avg_thresholdZ = avg_threshold(len_avg_threshold)
-            gauss_filtered = gaussian_filter(intensity_average_filtered, sigma=2)
-            optimal_voice_count = 0
-            for j in range(len(gauss_filtered)):
-                if gauss_filtered[j] > optimal_voice_level:
-                    optimal_voice_count = optimal_voice_count + 1
-            loudness_factor = 100 * (optimal_voice_count/ len_intensity)
-            loudness_factor_fct = np.poly1d([0,0,loudness_factor])
-            loudnessX = np.arange(len_buffer)
-            loudnessY = loudness_factor_fct(loudnessX)
-            loudness_threshold = 20
-            if loudness_factor > loudness_threshold:
-                plt.plot(loudnessX,loudnessY, 'g')
-            else:
-                plt.plot(loudnessX,loudnessY, 'r')
-            plt.plot(len_min_threshold,min_thresholdZ)
-            plt.plot(len_avg_threshold,avg_thresholdZ)
-            plt.plot(x, intensity_average_filtered)
-            plt.plot(x, gauss_filtered)
-            plt.plot(np.arange(len(buffer_data)),buffer_data)
-            plt.pause(0.01)
-            plt.cla()
+            computeLoudness()
             #print(sum(audio_data))
     except KeyboardInterrupt:
         stream.stop_stream()
