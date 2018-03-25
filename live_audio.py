@@ -66,7 +66,7 @@ for i in range(NUM_LEDS+1):
 blue = c.Color("blue")
 
 #### Serial Setup
-ser = serial.Serial("COM9", 115200)
+ser = serial.Serial("/dev/ttyACM0", 115200)
 LedEff = LedEffects(header,ser,NUM_LEDS)
 LedEff.chase(1, colour=blue, offcolour=c.Color("black"))
 
@@ -82,11 +82,21 @@ def callback(in_data, frame_count, time_info, flag):
     return (audio_data, pyaudio.paContinue)
 
 def start():
+    info = p.get_host_api_info_by_index(0)
+    numdevices = info.get('deviceCount')
+    mics = []
+    #for each audio device, determine if is an input or an output and add it to the appropriate list and dictionary
+    for i in range (0,numdevices):
+        if p.get_device_info_by_host_api_device_index(0,i).get('maxInputChannels')>0:
+            mics.append(i)
+
     stream = p.open(format=FORMAT,
                 channels=CHANNELS,
                 rate=RATE,
                 input=True,
+                input_device_index=mics[0],
                 frames_per_buffer=CHUNK,
+                
                 stream_callback=callback)
     stream.start_stream()
     return stream
@@ -205,7 +215,7 @@ def computeLoudness():
     global optimal_voice_level,last_led_fac
     snd = parselmouth.Sound(buffer_data)
     silencedb = 60
-    sample_time = 0.01
+    sample_time = 0.1
     #mindip = 'minimum_dip_between_peaks'
     #showtext = 'keep_Soundfiles_and_Textgrids'
     #minpause = 'minimum_pause_duration'
