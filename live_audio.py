@@ -22,6 +22,7 @@ import colour as c
 import threading, queue
 from LedEffects import LedEffects
 import struct
+from usb.core import find as finddev
 
 app = Flask(__name__)
 app.config.from_object(__name__)
@@ -44,8 +45,8 @@ last_led_fac = 0
 
 NUM_LEDS = 23
 LIVE = False
-optimal_voice_level = 66
-silencedb = 53
+optimal_voice_level = 85 #65
+silencedb = 67 #53
 min_freq = 50
 max_freq = 500
 
@@ -215,7 +216,7 @@ def generateLoudnessGraph():
     return render_template('loudness.html', loudness=encoded_img)
 
 def computeLoudness():
-    global optimal_voice_level,last_led_fac,max_freq,min_freq,silencedb
+    global optimal_voice_level,last_led_fac,max_freq,min_freq,silencedb,ser
     snd = parselmouth.Sound(buffer_data)
     sample_time = 0.5
     #mindip = 'minimum_dip_between_peaks'
@@ -298,8 +299,25 @@ def computeLoudness():
         r = (1-factor)
         g = factor
         leds_list.append(c.Color(rgb=(r,g, 0)))
-
-    ser.write(LedEff.leds_list_to_byte(leds_list))
+    try:
+    	ser.write(LedEff.leds_list_to_byte(leds_list))
+    except serial.SerialException as e:
+        #There is no new data from serial port
+        found = False
+        ser.close()
+        while found:
+            if finddev(idVendor=0x2341, idProduct=0x8036):
+                found = True
+                dev.reset()
+                ser = serial.Serial("/dev/ttyACM0", 115200)
+        return None
+    except TypeError as e:
+        #Disconnect of USB->UART occured
+        self.port.close()
+        return None
+    else:
+        #Some data was received
+        return None
     #print((optimal_voice_count/ len_intensity))
     #if loudness_factor > loudness_threshold:
     #    plt.plot(loudnessX,loudnessY, 'g')
@@ -316,6 +334,7 @@ def computeLoudness():
     #plt.pause(0.01)
     #plt.cla()
 
+
 @app.route('/live', methods = ['GET'])
 def live():
     global stream,LIVE
@@ -326,7 +345,6 @@ def live():
     else:
         LIVE = False
     return redirect('/')
-
 
 
 #fig = plt.figure()
@@ -617,3 +635,4 @@ def main():
 
 if __name__ == '__main__':
     app.run()
+    computeLoudness()
