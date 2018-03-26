@@ -36,7 +36,7 @@ p = pyaudio.PyAudio()
 fulldata = np.array([])
 dry_data = np.array([])
 
-buffer_data = np.zeros(1024*100)
+buffer_data = np.zeros(1024*50)
 audio_data = np.zeros(1024)
 data = np.random.random((1024,1024))
 pitch_buffer = np.full(2800,np.nan)
@@ -44,8 +44,8 @@ last_led_fac = 0
 
 NUM_LEDS = 23
 LIVE = False
-optimal_voice_level = 76
-silencedb = 60
+optimal_voice_level = 66
+silencedb = 53
 min_freq = 50
 max_freq = 500
 
@@ -69,7 +69,7 @@ for i in range(NUM_LEDS+1):
 blue = c.Color("blue")
 
 #### Serial Setup
-ser = serial.Serial("COM9", 115200) #/dev/ttyACM0
+ser = serial.Serial("/dev/ttyACM0", 115200) #/dev/ttyACM0
 LedEff = LedEffects(header,ser,NUM_LEDS)
 LedEff.chase(1, colour=blue, offcolour=c.Color("black"))
 
@@ -277,17 +277,17 @@ def computeLoudness():
         #last_led_fac = np.append(np.roll(last_led_fac, -1)[:-(len(last_led_fac)-1)],factor)
         #factor = np.average(last_led_fac)
         if factor >= last_led_fac:
-            factor = last_led_fac + 0.006
+            factor = last_led_fac + 0.05
         elif factor < last_led_fac:
-            factor = last_led_fac - 0.006
+            factor = last_led_fac - 0.05
         else:
             factor = last_led_fac
         last_led_fac = factor
     else:
         if factor > 0.4:
-            factor = factor - 0.006
+            factor = factor - 0.05
         else:
-            factor = factor + 0.006
+            factor = factor + 0.05
         last_led_fac = factor
 
     if factor > 1:
