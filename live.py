@@ -13,7 +13,6 @@ from scipy.ndimage.filters import gaussian_filter
 from scipy.signal import butter, lfilter, freqz
 from scipy import signal
 from numpy import NaN, Inf, arange, isscalar, asarray, array
-from flask import Flask, Response, render_template, request, redirect, jsonify
 from scipy.io import wavfile
 import io
 import base64
@@ -23,6 +22,7 @@ import threading, queue
 from LedEffects import LedEffects
 import struct
 from usb.core import find as finddev
+import subprocess
 
 CHANNELS = 1
 RATE = 44100
@@ -33,15 +33,15 @@ p = pyaudio.PyAudio()
 fulldata = np.array([])
 dry_data = np.array([])
 
-buffer_data = np.zeros(1024*50)
+buffer_data = np.zeros(1024*5)
 audio_data = np.zeros(1024)
 data = np.random.random((1024,1024))
 pitch_buffer = np.full(2800,np.nan)
 last_led_fac = 0
 
 NUM_LEDS = 23
-LIVE = False
-optimal_voice_level = 85 #65
+LIVE = True
+optimal_voice_level = 79 #65
 silencedb = 67 #53
 min_freq = 50
 max_freq = 500
@@ -66,7 +66,7 @@ for i in range(NUM_LEDS+1):
 blue = c.Color("blue")
 
 #### Serial Setup
-ser = serial.Serial("/dev/ttyACM0", 115200) #/dev/ttyACM0
+ser = serial.Serial("/dev/ttyACM0", 115200, timeout=1) #/dev/ttyACM0
 LedEff = LedEffects(header,ser,NUM_LEDS)
 LedEff.chase(1, colour=blue, offcolour=c.Color("black"))
 
@@ -76,8 +76,6 @@ def callback(in_data, frame_count, time_info, flag):
     dry_data = np.append(dry_data,audio_data) #dry_data
     buffer_data = np.append(np.roll(buffer_data, -len(audio_data))[:-1024],audio_data)
     #do processing here
-    if LIVE:
-        computeLoudness()
     fulldata = np.append(fulldata,audio_data)
     return (audio_data, pyaudio.paContinue)
 
@@ -121,7 +119,7 @@ def computeLoudness():
 
     #use intensity to get threshold
     intensity = snd.to_intensity(time_step=sample_time)
-    pitch = snd.to_pitch(time_step=sample_time)
+    #pitch = snd.to_pitch(time_step=sample_time)
 
     # estimate noise floor
     minint = np.amin(intensity.values[0])
@@ -143,18 +141,18 @@ def computeLoudness():
     speakingParts = []
 
     data = gaussian_filter(intensity.values[0],sigma=1)
-
+    '''
     pitchFilteredX = []
     pitchFilteredY = []
     for k in range(len(pitch.selected_array['frequency'])):
         if pitch.selected_array['frequency'][k] > min_freq and pitch.selected_array['frequency'][k] < max_freq:
             pitchFilteredY.append(pitch.selected_array['frequency'][k])
             pitchFilteredX.append(k)
-
+    '''
     len_speakingParts = 0
     optimal_voice_count = 0
     for i in range(0, len(data)):
-        if data[i] > threshold3 and i in pitchFilteredX:
+        if data[i] > threshold3:# and i in pitchFilteredX:
             speakingParts.append((i,data[i]))
             len_speakingParts = len_speakingParts + 1
             if data[i] > optimal_voice_level:
@@ -174,17 +172,14 @@ def computeLoudness():
         #last_led_fac = np.append(np.roll(last_led_fac, -1)[:-(len(last_led_fac)-1)],factor)
         #factor = np.average(last_led_fac)
         if factor >= last_led_fac:
-            factor = last_led_fac + 0.05
+            factor = last_led_fac + 0.01
         elif factor < last_led_fac:
-            factor = last_led_fac - 0.05
+            factor = last_led_fac - 0.01
         else:
             factor = last_led_fac
         last_led_fac = factor
     else:
-        if factor > 0.4:
-            factor = factor - 0.05
-        else:
-            factor = factor + 0.05
+        factor = factor + 0.01
         last_led_fac = factor
 
     if factor > 1:
@@ -199,18 +194,14 @@ def computeLoudness():
     	ser.write(LedEff.leds_list_to_byte(leds_list))
     except serial.SerialException as e:
         #There is no new data from serial port
-        found = False
-        ser.close()
-        while found:
-            if finddev(idVendor=0x2341, idProduct=0x8036):
-                found = True
-                dev.reset()
-                ser = serial.Serial("/dev/ttyACM0", 115200)
-        return None
+        subprocess.run(["usb-reset", "2341", "0036"])
+        ser = serial.Serial("/dev/ttyACM0", 115200, timeout=1)
+        return ser
     except TypeError as e:
         #Disconnect of USB->UART occured
-        self.port.close()
-        return None
+        subprocess.run(["usb-reset", "2341", "0036"])
+        ser = serial.Serial("/dev/ttyACM0", 115200, timeout=1)
+        return ser
     else:
         #Some data was received
         return None
@@ -290,18 +281,10 @@ def averageFilter(data,widthSegments):
     return pitchAverageFilter
 
 def main():
-    print(data)
-    stream = p.open(format=pyaudio.paFloat32,
-                channels=CHANNELS,
-                rate=RATE,
-                input=True,
-                stream_callback=callback)
-    stream.start_stream()
-    #ani = animation.FuncAnimation(fig, animate, interval=100)
-    #plt.show()
+    stream = start()
 
     try:
-        while True:
+        while LIVE:
             computeLoudness()
             #print(sum(audio_data))
     except KeyboardInterrupt:
@@ -311,3 +294,5 @@ def main():
 
     stream.close()
     p.terminate()
+
+main()
