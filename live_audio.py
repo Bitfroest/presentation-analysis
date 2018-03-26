@@ -40,11 +40,14 @@ buffer_data = np.zeros(1024*100)
 audio_data = np.zeros(1024)
 data = np.random.random((1024,1024))
 pitch_buffer = np.full(2800,np.nan)
-last_led_fac = np.zeros(100)
+last_led_fac = 0
 
-NUM_LEDS = 21
+NUM_LEDS = 23
 LIVE = False
 optimal_voice_level = 76
+silencedb = 60
+min_freq = 50
+max_freq = 500
 
 ##calculate header for Adalight
 s = struct.pack('>H', NUM_LEDS)
@@ -66,7 +69,7 @@ for i in range(NUM_LEDS+1):
 blue = c.Color("blue")
 
 #### Serial Setup
-ser = serial.Serial("/dev/ttyACM0", 115200)
+ser = serial.Serial("COM9", 115200) #/dev/ttyACM0
 LedEff = LedEffects(header,ser,NUM_LEDS)
 LedEff.chase(1, colour=blue, offcolour=c.Color("black"))
 
@@ -96,7 +99,7 @@ def start():
                 input=True,
                 input_device_index=mics[0],
                 frames_per_buffer=CHUNK,
-                
+
                 stream_callback=callback)
     stream.start_stream()
     return stream
@@ -212,10 +215,9 @@ def generateLoudnessGraph():
     return render_template('loudness.html', loudness=encoded_img)
 
 def computeLoudness():
-    global optimal_voice_level,last_led_fac
+    global optimal_voice_level,last_led_fac,max_freq,min_freq,silencedb
     snd = parselmouth.Sound(buffer_data)
-    silencedb = 60
-    sample_time = 0.1
+    sample_time = 0.5
     #mindip = 'minimum_dip_between_peaks'
     #showtext = 'keep_Soundfiles_and_Textgrids'
     #minpause = 'minimum_pause_duration'
@@ -248,7 +250,7 @@ def computeLoudness():
     pitchFilteredX = []
     pitchFilteredY = []
     for k in range(len(pitch.selected_array['frequency'])):
-        if pitch.selected_array['frequency'][k] > 50 and pitch.selected_array['frequency'][k] < 300:
+        if pitch.selected_array['frequency'][k] > min_freq and pitch.selected_array['frequency'][k] < max_freq:
             pitchFilteredY.append(pitch.selected_array['frequency'][k])
             pitchFilteredX.append(k)
 
@@ -268,17 +270,33 @@ def computeLoudness():
     y = [i[1] for i in speakingParts]
 
     leds_list = []
+    factor = last_led_fac
 
     if len_speakingParts:
-        factor = optimal_voice_count / (len(intensity.values[0])/len_speakingParts)
-        last_led_fac = np.append(np.roll(last_led_fac, -1)[:-(len(last_led_fac)-1)],factor)
-        factor = np.average(last_led_fac)
+        factor = optimal_voice_count * len_speakingParts/ len(intensity.values[0])
+        #last_led_fac = np.append(np.roll(last_led_fac, -1)[:-(len(last_led_fac)-1)],factor)
+        #factor = np.average(last_led_fac)
+        if factor >= last_led_fac:
+            factor = last_led_fac + 0.006
+        elif factor < last_led_fac:
+            factor = last_led_fac - 0.006
+        else:
+            factor = last_led_fac
+        last_led_fac = factor
     else:
-        factor = 0.5
+        if factor > 0.4:
+            factor = factor - 0.006
+        else:
+            factor = factor + 0.006
+        last_led_fac = factor
 
+    if factor > 1:
+        factor = 1
+    if factor < 0:
+        factor = 0
     for i in range(NUM_LEDS+1):
-        r = 1 - min(factor,1)
-        g = min(factor,1)
+        r = (1-factor)
+        g = factor
         leds_list.append(c.Color(rgb=(r,g, 0)))
 
     ser.write(LedEff.leds_list_to_byte(leds_list))
@@ -383,10 +401,9 @@ def peakdet(v, delta, x = None):
     return array(maxtab), array(mintab)
 
 def computeSpeed():
-    silencedb = 67
+    global min_freq, max_freq, silencedb
     sample_time = 0.01
-    min_freq = 50
-    max_freq = 500
+
     #mindip = 'minimum_dip_between_peaks'
     #showtext = 'keep_Soundfiles_and_Textgrids'
     #minpause = 'minimum_pause_duration'
